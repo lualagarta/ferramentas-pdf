@@ -38,7 +38,7 @@ def carregar_imagem_padrao(img_bytes, largura_alvo):
 st.sidebar.title("🛠️ Ferramentas PDF")
 opcao = st.sidebar.radio(
     "Escolha uma ação:",
-    ["1. Inserir Página", "2. Substituir Página", "3. Extrair Imagens", "4. Criar PDF de Imagens"]
+    ["1. Criar PDF de Imagens", "2. Inserir Página", "3. Substituir Página", "4. Extrair Imagens"]
 )
 
 st.sidebar.markdown("---")
@@ -46,9 +46,59 @@ st.sidebar.info("App criado para processar PDFs e Imagens de forma fácil, mante
 
 
 # ==========================================
-# OPÇÃO 1: INSERIR PÁGINA
+# OPÇÃO 1: CRIAR PDF DE IMAGENS
 # ==========================================
-if opcao == "1. Inserir Página":
+if opcao == "1. Criar PDF de Imagens":
+    st.title("📚 Criar PDF a partir de Imagens")
+    st.write("Selecione várias imagens (capítulos/páginas) para uni-las em um único PDF de alta qualidade.")
+
+    largura_alvo = st.number_input("Largura Alvo (px)", value=LARGURA_PADRAO_DEFAULT)
+    
+    st.subheader("Imagens Principais")
+    imagens_upload = st.file_uploader("Selecione todas as imagens na ordem correta", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
+    
+    st.subheader("Opcionais (Padrões)")
+    col1, col2 = st.columns(2)
+    with col1:
+        img_inicio = st.file_uploader("Imagem Inicial (Capa/Aviso)", type=["png", "jpg", "jpeg", "webp"])
+    with col2:
+        img_fim = st.file_uploader("Imagem Final (Fim/Créditos)", type=["png", "jpg", "jpeg", "webp"])
+
+    if st.button("Gerar PDF") and imagens_upload:
+        try:
+            with st.spinner("Redimensionando e unindo imagens..."):
+                lista_imagens_pdf = []
+
+                if img_inicio:
+                    lista_imagens_pdf.append(carregar_imagem_padrao(img_inicio, largura_alvo))
+
+                for img_up in imagens_upload:
+                    lista_imagens_pdf.append(carregar_imagem_padrao(img_up, largura_alvo))
+
+                if img_fim:
+                    lista_imagens_pdf.append(carregar_imagem_padrao(img_fim, largura_alvo))
+
+                if lista_imagens_pdf:
+                    out_io = io.BytesIO()
+                    primeira_img = lista_imagens_pdf[0]
+                    outras_imgs = lista_imagens_pdf[1:]
+
+                    primeira_img.save(
+                        out_io, "PDF", resolution=100.0, save_all=True,
+                        append_images=outras_imgs, optimize=True
+                    )
+                    out_io.seek(0)
+                    
+                    st.success("✅ PDF criado com sucesso!")
+                    st.download_button("⬇️ Baixar Arquivo PDF", data=out_io, file_name="capitulo_unido.pdf", mime="application/pdf")
+        except Exception as e:
+            st.error(f"Erro ao gerar PDF: {e}")
+
+
+# ==========================================
+# OPÇÃO 2: INSERIR PÁGINA
+# ==========================================
+elif opcao == "2. Inserir Página":
     st.title("➕ Inserir Página em PDF")
     st.write("Adicione uma imagem ou página PDF no meio do seu arquivo, padronizando a largura.")
 
@@ -103,9 +153,9 @@ if opcao == "1. Inserir Página":
 
 
 # ==========================================
-# OPÇÃO 2: SUBSTITUIR PÁGINA
+# OPÇÃO 3: SUBSTITUIR PÁGINA
 # ==========================================
-elif opcao == "2. Substituir Página":
+elif opcao == "3. Substituir Página":
     st.title("🔄 Substituir Página em PDF")
     st.write("Troque uma página existente por uma nova imagem ou PDF.")
 
@@ -160,9 +210,9 @@ elif opcao == "2. Substituir Página":
 
 
 # ==========================================
-# OPÇÃO 3: EXTRAIR IMAGENS
+# OPÇÃO 4: EXTRAIR IMAGENS
 # ==========================================
-elif opcao == "3. Extrair Imagens":
+elif opcao == "4. Extrair Imagens":
     st.title("📸 Extrair Imagens de PDF")
     st.write("Obtenha todas as imagens de dentro de um arquivo PDF. Você baixará um arquivo ZIP com todas elas.")
 
@@ -193,53 +243,3 @@ elif opcao == "3. Extrair Imagens":
                 st.warning("⚠️ Nenhuma imagem encontrada neste PDF.")
         except Exception as e:
             st.error(f"Erro: {e}")
-
-
-# ==========================================
-# OPÇÃO 4: CRIAR PDF DE IMAGENS
-# ==========================================
-elif opcao == "4. Criar PDF de Imagens":
-    st.title("📚 Criar PDF a partir de Imagens")
-    st.write("Selecione várias imagens (capítulos/páginas) para uni-las em um único PDF de alta qualidade.")
-
-    largura_alvo = st.number_input("Largura Alvo (px)", value=LARGURA_PADRAO_DEFAULT)
-    
-    st.subheader("Imagens Principais")
-    imagens_upload = st.file_uploader("Selecione todas as imagens na ordem correta", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
-    
-    st.subheader("Opcionais (Padrões)")
-    col1, col2 = st.columns(2)
-    with col1:
-        img_inicio = st.file_uploader("Imagem Inicial (Capa/Aviso)", type=["png", "jpg", "jpeg", "webp"])
-    with col2:
-        img_fim = st.file_uploader("Imagem Final (Fim/Créditos)", type=["png", "jpg", "jpeg", "webp"])
-
-    if st.button("Gerar PDF") and imagens_upload:
-        try:
-            with st.spinner("Redimensionando e unindo imagens..."):
-                lista_imagens_pdf = []
-
-                if img_inicio:
-                    lista_imagens_pdf.append(carregar_imagem_padrao(img_inicio, largura_alvo))
-
-                for img_up in imagens_upload:
-                    lista_imagens_pdf.append(carregar_imagem_padrao(img_up, largura_alvo))
-
-                if img_fim:
-                    lista_imagens_pdf.append(carregar_imagem_padrao(img_fim, largura_alvo))
-
-                if lista_imagens_pdf:
-                    out_io = io.BytesIO()
-                    primeira_img = lista_imagens_pdf[0]
-                    outras_imgs = lista_imagens_pdf[1:]
-
-                    primeira_img.save(
-                        out_io, "PDF", resolution=100.0, save_all=True,
-                        append_images=outras_imgs, optimize=True
-                    )
-                    out_io.seek(0)
-                    
-                    st.success("✅ PDF criado com sucesso!")
-                    st.download_button("⬇️ Baixar Arquivo PDF", data=out_io, file_name="capitulo_unido.pdf", mime="application/pdf")
-        except Exception as e:
-            st.error(f"Erro ao gerar PDF: {e}")
