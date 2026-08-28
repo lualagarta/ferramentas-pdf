@@ -51,18 +51,11 @@ def ordenar_inteligentemente_arquivos(arquivos):
     alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key.name)]
     return sorted(arquivos, key=alphanum_key)
 
-
 # --- MENU LATERAL ---
 st.sidebar.title("🛠️ Ferramentas PDF")
 opcao = st.sidebar.radio(
     "Escolha uma ação:",
-    [
-        "1. Criar PDF(s) de Imagens", 
-        "2. Inserir Página", 
-        "3. Substituir Página", 
-        "4. Extrair Imagens",
-        "5. Empacotar em ZIP (Celular)"
-    ]
+    ["1. Criar PDF(s) de Imagens", "2. Inserir Página", "3. Substituir Página", "4. Extrair Imagens"]
 )
 
 st.sidebar.markdown("---")
@@ -76,6 +69,7 @@ if opcao == "1. Criar PDF(s) de Imagens":
     st.title("📚 Criar PDF a partir de Imagens")
     st.write("Junte imagens para formar PDFs. Escolha usar um arquivo ZIP (várias pastas) ou arquivos avulsos.")
 
+    # Configurações globais para esta opção
     largura_alvo = st.number_input("Largura Alvo (px)", value=LARGURA_PADRAO_DEFAULT)
     
     st.subheader("Opcionais (Padrões)")
@@ -88,11 +82,12 @@ if opcao == "1. Criar PDF(s) de Imagens":
     st.markdown("---")
     st.markdown("### Escolha o método de envio:")
     
+    # Criando abas para o usuário escolher o método
     aba_zip, aba_avulsas = st.tabs(["📂 Modo ZIP (Lote de Pastas)", "🖼️ Modo Avulso (Várias Imagens)"])
     
     # --- ABA 1: MODO ZIP ---
     with aba_zip:
-        st.info("Envie um arquivo .ZIP contendo pastas. (Dica: Se estiver no celular, use a Ferramenta 5 para criar seu ZIP primeiro!).")
+        st.info("Envie um arquivo .ZIP contendo pastas (ex: Pasta '1', Pasta '2'). Cada pasta vai virar um arquivo PDF.")
         arquivo_zip = st.file_uploader("Envie o arquivo .ZIP com as pastas", type=["zip"])
         
         if st.button("Gerar PDFs em Lote") and arquivo_zip:
@@ -176,6 +171,7 @@ if opcao == "1. Criar PDF(s) de Imagens":
                     if img_inicio:
                         lista_imagens_pdf.append(carregar_imagem_padrao(img_inicio, largura_alvo))
 
+                    # Ordena as imagens enviadas inteligentemente (pág 2 vem antes da pág 10)
                     imagens_ordenadas = ordenar_inteligentemente_arquivos(imagens_upload)
 
                     for img_up in imagens_ordenadas:
@@ -206,7 +202,7 @@ if opcao == "1. Criar PDF(s) de Imagens":
 # ==========================================
 elif opcao == "2. Inserir Página":
     st.title("➕ Inserir Página em PDF")
-    st.write("Adicione uma imagem ou página PDF no meio do seu arquivo.")
+    st.write("Adicione uma imagem ou página PDF no meio do seu arquivo, padronizando a largura.")
 
     pdf_origem = st.file_uploader("1. Envie o PDF Original", type=["pdf"])
     item_novo = st.file_uploader("2. Envie a Nova Página (PDF ou Imagem)", type=["pdf", "png", "jpg", "jpeg", "webp"])
@@ -319,87 +315,32 @@ elif opcao == "3. Substituir Página":
 # ==========================================
 elif opcao == "4. Extrair Imagens":
     st.title("📸 Extrair Imagens de PDF")
-    st.write("Obtenha todas as imagens de dentro de um arquivo PDF.")
+    st.write("Obtenha todas as imagens de dentro de um arquivo PDF. Você baixará um arquivo ZIP com todas elas.")
 
     pdf_origem = st.file_uploader("Envie o PDF", type=["pdf"])
-    
-    modo_download = st.radio(
-        "Como você quer receber as imagens?",
-        ["📦 Tudo junto em um arquivo ZIP", "🖼️ Imagens separadas (Baixar uma por uma)"]
-    )
 
     if st.button("Extrair Imagens") and pdf_origem:
         try:
             with st.spinner("Lendo páginas e extraindo..."):
                 reader = PdfReader(pdf_origem)
-                imagens_extraidas = []
+                zip_io = io.BytesIO()
+                total_imagens = 0
+
+                with zipfile.ZipFile(zip_io, "w") as zipf:
+                    for i, pagina in enumerate(reader.pages):
+                        for num_img, imagem_objeto in enumerate(pagina.images):
+                            extensao = os.path.splitext(imagem_objeto.name)[1]
+                            if not extensao: extensao = ".png"
+                            nome_arquivo = f"pagina_{i + 1:03d}_img_{num_img + 1}{extensao}"
+                            zipf.writestr(nome_arquivo, imagem_objeto.data)
+                            total_imagens += 1
                 
-                # Extrai as imagens para a memória
-                for i, pagina in enumerate(reader.pages):
-                    for num_img, imagem_objeto in enumerate(pagina.images):
-                        extensao = os.path.splitext(imagem_objeto.name)[1]
-                        if not extensao: extensao = ".png"
-                        nome_arquivo = f"pagina_{i + 1:03d}_img_{num_img + 1}{extensao}"
-                        imagens_extraidas.append((nome_arquivo, imagem_objeto.data))
-                
-                total_imagens = len(imagens_extraidas)
+                zip_io.seek(0)
 
             if total_imagens > 0:
                 st.success(f"✅ Extração concluída! {total_imagens} imagens encontradas.")
-                
-                if "ZIP" in modo_download:
-                    # Gera o ZIP
-                    zip_io = io.BytesIO()
-                    with zipfile.ZipFile(zip_io, "w") as zipf:
-                        for nome, dados in imagens_extraidas:
-                            zipf.writestr(nome, dados)
-                    zip_io.seek(0)
-                    st.download_button("⬇️ Baixar Imagens (ZIP)", data=zip_io, file_name="imagens_extraidas.zip", mime="application/zip")
-                
-                else:
-                    # Exibe as imagens na tela com botões de download individuais
-                    st.write("---")
-                    for nome, dados in imagens_extraidas:
-                        col_img, col_btn = st.columns([1, 2])
-                        with col_img:
-                            st.image(dados, width=150)
-                        with col_btn:
-                            st.write(f"**{nome}**")
-                            st.download_button(f"⬇️ Baixar {nome}", data=dados, file_name=nome, mime="image/png", key=nome)
-                        st.write("---")
+                st.download_button("⬇️ Baixar Imagens (ZIP)", data=zip_io, file_name="imagens_extraidas.zip", mime="application/zip")
             else:
                 st.warning("⚠️ Nenhuma imagem encontrada neste PDF.")
         except Exception as e:
             st.error(f"Erro: {e}")
-
-
-# ==========================================
-# OPÇÃO 5: CRIAR ZIP (PARA CELULAR)
-# ==========================================
-elif opcao == "5. Empacotar em ZIP (Celular)":
-    st.title("🗂️ Empacotar Imagens em ZIP")
-    st.write("Criar arquivos ZIP no celular não é tão óbvio. Use esta ferramenta para juntar as imagens de um capítulo em um único arquivo ZIP.")
-    
-    nome_pasta = st.text_input("Nome do Capítulo/Pasta (ex: Capitulo_01)", value="Capitulo_01")
-    arquivos = st.file_uploader("Selecione as imagens do capítulo", accept_multiple_files=True)
-    
-    if st.button("Gerar Arquivo ZIP") and arquivos:
-        try:
-            with st.spinner("Empacotando..."):
-                zip_io = io.BytesIO()
-                with zipfile.ZipFile(zip_io, "w") as zipf:
-                    for arq in arquivos:
-                        # Salva dentro da pasta com o nome informado
-                        caminho_interno = f"{nome_pasta}/{arq.name}"
-                        zipf.writestr(caminho_interno, arq.read())
-                
-                zip_io.seek(0)
-                st.success("✅ Arquivo ZIP criado com sucesso!")
-                st.download_button(
-                    "⬇️ Baixar Meu Arquivo ZIP", 
-                    data=zip_io, 
-                    file_name=f"{nome_pasta}.zip", 
-                    mime="application/zip"
-                )
-        except Exception as e:
-            st.error(f"Erro ao criar ZIP: {e}")
