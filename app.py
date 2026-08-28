@@ -52,7 +52,7 @@ def ordenar_inteligentemente_arquivos(arquivos):
     return sorted(arquivos, key=alphanum_key)
 
 # --- MENU LATERAL ---
-st.sidebar.title("🛠️ Ferramentas PDF")
+st.sidebar.title("Ferramentas PDF")
 opcao = st.sidebar.radio(
     "Escolha uma ação:",
     ["1. Criar PDF(s) de Imagens", "2. Inserir Página", "3. Substituir Página", "4. Extrair Imagens"]
@@ -66,7 +66,7 @@ st.sidebar.info("App criado para processar PDFs e Imagens de forma fácil, mante
 # OPÇÃO 1: CRIAR PDF DE IMAGENS
 # ==========================================
 if opcao == "1. Criar PDF(s) de Imagens":
-    st.title("📚 Criar PDF a partir de Imagens")
+    st.title("Criar PDF a partir de Imagens")
     st.write("Junte imagens para formar PDFs. Escolha usar um arquivo ZIP (várias pastas) ou arquivos avulsos.")
 
     # Configurações globais para esta opção
@@ -83,7 +83,7 @@ if opcao == "1. Criar PDF(s) de Imagens":
     st.markdown("### Escolha o método de envio:")
     
     # Criando abas para o usuário escolher o método
-    aba_zip, aba_avulsas = st.tabs(["📂 Modo ZIP (Lote de Pastas)", "🖼️ Modo Avulso (Várias Imagens)"])
+    aba_zip, aba_avulsas = st.tabs(["Modo ZIP (Lote de Pastas)", "Modo Avulso (Várias Imagens)"])
     
     # --- ABA 1: MODO ZIP ---
     with aba_zip:
@@ -201,7 +201,7 @@ if opcao == "1. Criar PDF(s) de Imagens":
 # OPÇÃO 2: INSERIR PÁGINA
 # ==========================================
 elif opcao == "2. Inserir Página":
-    st.title("➕ Inserir Página em PDF")
+    st.title("Inserir Página em PDF")
     st.write("Adicione uma imagem ou página PDF no meio do seu arquivo, padronizando a largura.")
 
     pdf_origem = st.file_uploader("1. Envie o PDF Original", type=["pdf"])
@@ -257,7 +257,7 @@ elif opcao == "2. Inserir Página":
 # OPÇÃO 3: SUBSTITUIR PÁGINA
 # ==========================================
 elif opcao == "3. Substituir Página":
-    st.title("🔄 Substituir Página em PDF")
+    st.title("Substituir Página em PDF")
     st.write("Troque uma página existente por uma nova imagem ou PDF.")
 
     pdf_origem = st.file_uploader("1. Envie o PDF Original", type=["pdf"])
@@ -314,7 +314,7 @@ elif opcao == "3. Substituir Página":
 # OPÇÃO 4: EXTRAIR IMAGENS
 # ==========================================
 elif opcao == "4. Extrair Imagens":
-    st.title("📸 Extrair Imagens de PDF")
+    st.title("Extrair Imagens de PDF")
     st.write("Obtenha todas as imagens de dentro de um arquivo PDF. Você baixará um arquivo ZIP com todas elas.")
 
     pdf_origem = st.file_uploader("Envie o PDF", type=["pdf"])
