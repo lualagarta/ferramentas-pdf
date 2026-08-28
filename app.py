@@ -7,10 +7,17 @@ from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
 # --- CONFIGURAÇÕES DA PÁGINA ---
-st.set_page_config(page_title="PDF & Image Tools", page_icon="📄", layout="centered")
+st.set_page_config(page_title="PDF & Image Tools", layout="centered")
 
 EXTENSOES_IMAGEM = ['.webp', '.jpg', '.jpeg', '.png']
 LARGURA_PADRAO_DEFAULT = 1200
+
+# --- INICIALIZAR MEMÓRIA (SESSION STATE) ---
+# Necessário para os botões de download funcionarem simultaneamente
+if "pdfs_gerados_lote" not in st.session_state:
+    st.session_state.pdfs_gerados_lote = {}
+if "zip_bytes_lote" not in st.session_state:
+    st.session_state.zip_bytes_lote = None
 
 # --- FUNÇÕES AUXILIARES ---
 def redimensionar_proporcional(img, largura_alvo):
@@ -51,11 +58,17 @@ def ordenar_inteligentemente_arquivos(arquivos):
     alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key.name)]
     return sorted(arquivos, key=alphanum_key)
 
+
 # --- MENU LATERAL ---
 st.sidebar.title("Ferramentas PDF")
 opcao = st.sidebar.radio(
     "Escolha uma ação:",
-    ["1. Criar PDF(s) de Imagens", "2. Inserir Página", "3. Substituir Página", "4. Extrair Imagens"]
+    [
+        "1. Criar PDF(s) de Imagens", 
+        "2. Inserir Página", 
+        "3. Substituir Página", 
+        "4. Extrair Imagens"
+    ]
 )
 
 st.sidebar.markdown("---")
@@ -69,7 +82,6 @@ if opcao == "1. Criar PDF(s) de Imagens":
     st.title("Criar PDF a partir de Imagens")
     st.write("Junte imagens para formar PDFs. Escolha usar um arquivo ZIP (várias pastas) ou arquivos avulsos.")
 
-    # Configurações globais para esta opção
     largura_alvo = st.number_input("Largura Alvo (px)", value=LARGURA_PADRAO_DEFAULT)
     
     st.subheader("Opcionais (Padrões)")
@@ -82,15 +94,18 @@ if opcao == "1. Criar PDF(s) de Imagens":
     st.markdown("---")
     st.markdown("### Escolha o método de envio:")
     
-    # Criando abas para o usuário escolher o método
     aba_zip, aba_avulsas = st.tabs(["Modo ZIP (Lote de Pastas)", "Modo Avulso (Várias Imagens)"])
     
     # --- ABA 1: MODO ZIP ---
     with aba_zip:
-        st.info("Envie um arquivo .ZIP contendo pastas (ex: Pasta '1', Pasta '2'). Cada pasta vai virar um arquivo PDF.")
+        st.info("Envie um arquivo .ZIP contendo pastas. Você poderá baixar os PDFs gerados juntos ou um por um.")
         arquivo_zip = st.file_uploader("Envie o arquivo .ZIP com as pastas", type=["zip"])
         
         if st.button("Gerar PDFs em Lote") and arquivo_zip:
+            # Limpa processamentos antigos da memória
+            st.session_state.pdfs_gerados_lote = {}
+            st.session_state.zip_bytes_lote = None
+            
             try:
                 with st.spinner("Extraindo imagens e gerando PDFs..."):
                     pastas_dict = {}
@@ -119,6 +134,7 @@ if opcao == "1. Criar PDF(s) de Imagens":
                     else:
                         zip_saida_io = io.BytesIO()
                         
+                        # Processa e salva tanto o ZIP quanto os PDFs individuais
                         with zipfile.ZipFile(zip_saida_io, 'w') as zip_saida:
                             for pasta, lista_arquivos in pastas_dict.items():
                                 lista_ordenada = ordenar_inteligentemente_tuplas(lista_arquivos)
@@ -149,14 +165,45 @@ if opcao == "1. Criar PDF(s) de Imagens":
                                         pdf_io, "PDF", resolution=100.0, save_all=True,
                                         append_images=outras_imgs, optimize=True
                                     )
-                                    zip_saida.writestr(f"{pasta}.pdf", pdf_io.getvalue())
+                                    
+                                    pdf_bytes = pdf_io.getvalue()
+                                    
+                                    # 1. Salva no dicionário para botões individuais
+                                    st.session_state.pdfs_gerados_lote[f"{pasta}.pdf"] = pdf_bytes
+                                    # 2. Adiciona dentro do ZIP geral
+                                    zip_saida.writestr(f"{pasta}.pdf", pdf_bytes)
                                     
                         zip_saida_io.seek(0)
-                        st.success(f"✅ Lote finalizado! {len(pastas_dict)} PDFs gerados com sucesso.")
-                        st.download_button("⬇️ Baixar todos os PDFs (ZIP)", data=zip_saida_io, file_name="pdfs_prontos.zip", mime="application/zip")
+                        st.session_state.zip_bytes_lote = zip_saida_io.getvalue()
                         
             except Exception as e:
                 st.error(f"Erro ao processar o lote: {e}")
+
+        # --- EXIBE OS BOTÕES DE DOWNLOAD (LOTE) ---
+        if st.session_state.pdfs_gerados_lote and st.session_state.zip_bytes_lote:
+            st.success(f"Lote finalizado! {len(st.session_state.pdfs_gerados_lote)} PDFs gerados com sucesso.")
+            
+            # Botão grande para o ZIP
+            st.download_button(
+                label="Baixar TODOS OS PDFs de uma vez (Arquivo .ZIP)",
+                data=st.session_state.zip_bytes_lote,
+                file_name="pdfs_prontos.zip",
+                mime="application/zip",
+                use_container_width=True
+            )
+            
+            st.markdown("---")
+            st.write("**Ou baixe os PDFs individualmente:**")
+            
+            # Botões individuais
+            for nome_pdf, dados_pdf in st.session_state.pdfs_gerados_lote.items():
+                st.download_button(
+                    label=f"Baixar {nome_pdf}",
+                    data=dados_pdf,
+                    file_name=nome_pdf,
+                    mime="application/pdf",
+                    key=f"btn_{nome_pdf}"
+                )
 
     # --- ABA 2: MODO AVULSO ---
     with aba_avulsas:
@@ -171,7 +218,6 @@ if opcao == "1. Criar PDF(s) de Imagens":
                     if img_inicio:
                         lista_imagens_pdf.append(carregar_imagem_padrao(img_inicio, largura_alvo))
 
-                    # Ordena as imagens enviadas inteligentemente (pág 2 vem antes da pág 10)
                     imagens_ordenadas = ordenar_inteligentemente_arquivos(imagens_upload)
 
                     for img_up in imagens_ordenadas:
@@ -191,8 +237,8 @@ if opcao == "1. Criar PDF(s) de Imagens":
                         )
                         out_io.seek(0)
                         
-                        st.success("✅ PDF criado com sucesso!")
-                        st.download_button("⬇️ Baixar Arquivo PDF", data=out_io, file_name="capitulo_unido.pdf", mime="application/pdf")
+                        st.success("PDF criado com sucesso!")
+                        st.download_button("Baixar Arquivo PDF", data=out_io, file_name="capitulo_unido.pdf", mime="application/pdf")
             except Exception as e:
                 st.error(f"Erro ao gerar PDF: {e}")
 
@@ -247,8 +293,8 @@ elif opcao == "2. Inserir Página":
                 writer.write(out_io)
                 out_io.seek(0)
 
-            st.success("✅ PDF gerado com sucesso!")
-            st.download_button("⬇️ Baixar Novo PDF", data=out_io, file_name="pdf_inserido.pdf", mime="application/pdf")
+            st.success("PDF gerado com sucesso!")
+            st.download_button("Baixar Novo PDF", data=out_io, file_name="pdf_inserido.pdf", mime="application/pdf")
         except Exception as e:
             st.error(f"Erro: {e}")
 
@@ -304,8 +350,8 @@ elif opcao == "3. Substituir Página":
                     writer.write(out_io)
                     out_io.seek(0)
 
-                    st.success("✅ Página substituída com sucesso!")
-                    st.download_button("⬇️ Baixar Novo PDF", data=out_io, file_name="pdf_substituido.pdf", mime="application/pdf")
+                    st.success("Página substituída com sucesso!")
+                    st.download_button("Baixar Novo PDF", data=out_io, file_name="pdf_substituido.pdf", mime="application/pdf")
         except Exception as e:
             st.error(f"Erro: {e}")
 
@@ -315,32 +361,52 @@ elif opcao == "3. Substituir Página":
 # ==========================================
 elif opcao == "4. Extrair Imagens":
     st.title("Extrair Imagens de PDF")
-    st.write("Obtenha todas as imagens de dentro de um arquivo PDF. Você baixará um arquivo ZIP com todas elas.")
+    st.write("Obtenha todas as imagens de dentro de um arquivo PDF.")
 
     pdf_origem = st.file_uploader("Envie o PDF", type=["pdf"])
+    
+    modo_download = st.radio(
+        "Como você quer receber as imagens?",
+        ["Tudo junto em um arquivo ZIP", "Imagens separadas (Baixar uma por uma)"]
+    )
 
     if st.button("Extrair Imagens") and pdf_origem:
         try:
             with st.spinner("Lendo páginas e extraindo..."):
                 reader = PdfReader(pdf_origem)
-                zip_io = io.BytesIO()
-                total_imagens = 0
-
-                with zipfile.ZipFile(zip_io, "w") as zipf:
-                    for i, pagina in enumerate(reader.pages):
-                        for num_img, imagem_objeto in enumerate(pagina.images):
-                            extensao = os.path.splitext(imagem_objeto.name)[1]
-                            if not extensao: extensao = ".png"
-                            nome_arquivo = f"pagina_{i + 1:03d}_img_{num_img + 1}{extensao}"
-                            zipf.writestr(nome_arquivo, imagem_objeto.data)
-                            total_imagens += 1
+                imagens_extraidas = []
                 
-                zip_io.seek(0)
+                for i, pagina in enumerate(reader.pages):
+                    for num_img, imagem_objeto in enumerate(pagina.images):
+                        extensao = os.path.splitext(imagem_objeto.name)[1]
+                        if not extensao: extensao = ".png"
+                        nome_arquivo = f"pagina_{i + 1:03d}_img_{num_img + 1}{extensao}"
+                        imagens_extraidas.append((nome_arquivo, imagem_objeto.data))
+                
+                total_imagens = len(imagens_extraidas)
 
             if total_imagens > 0:
-                st.success(f"✅ Extração concluída! {total_imagens} imagens encontradas.")
-                st.download_button("⬇️ Baixar Imagens (ZIP)", data=zip_io, file_name="imagens_extraidas.zip", mime="application/zip")
+                st.success(f"Extração concluída! {total_imagens} imagens encontradas.")
+                
+                if "ZIP" in modo_download:
+                    zip_io = io.BytesIO()
+                    with zipfile.ZipFile(zip_io, "w") as zipf:
+                        for nome, dados in imagens_extraidas:
+                            zipf.writestr(nome, dados)
+                    zip_io.seek(0)
+                    st.download_button("Baixar Imagens (ZIP)", data=zip_io, file_name="imagens_extraidas.zip", mime="application/zip")
+                
+                else:
+                    st.write("---")
+                    for nome, dados in imagens_extraidas:
+                        col_img, col_btn = st.columns([1, 2])
+                        with col_img:
+                            st.image(dados, width=150)
+                        with col_btn:
+                            st.write(f"**{nome}**")
+                            st.download_button(f"Baixar {nome}", data=dados, file_name=nome, mime="image/png", key=f"ext_{nome}")
+                        st.write("---")
             else:
-                st.warning("⚠️ Nenhuma imagem encontrada neste PDF.")
+                st.warning("Nenhuma imagem encontrada neste PDF.")
         except Exception as e:
             st.error(f"Erro: {e}")
