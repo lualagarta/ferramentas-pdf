@@ -2,6 +2,7 @@ import streamlit as st
 import io
 import os
 import zipfile
+import re
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
@@ -19,6 +20,8 @@ def redimensionar_proporcional(img, largura_alvo):
     return img.resize((largura_alvo, altura_alvo), Image.Resampling.LANCZOS)
 
 def image_to_pdf_bytes(img_bytes, largura_alvo):
+    if hasattr(img_bytes, 'seek'):
+        img_bytes.seek(0)
     img = Image.open(img_bytes)
     if img.mode in ('RGBA', 'P', 'LA'):
         img = img.convert('RGB')
@@ -29,16 +32,30 @@ def image_to_pdf_bytes(img_bytes, largura_alvo):
     return pdf_io
 
 def carregar_imagem_padrao(img_bytes, largura_alvo):
+    if hasattr(img_bytes, 'seek'):
+        img_bytes.seek(0)
     img = Image.open(img_bytes)
     if img.mode in ('RGBA', 'P', 'LA'):
         img = img.convert('RGB')
     return redimensionar_proporcional(img, largura_alvo)
 
+def ordenar_inteligentemente_tuplas(data):
+    """Ordena tuplas (nome_arquivo, bytes) ex: img_2 antes de img_10"""
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key[0])]
+    return sorted(data, key=alphanum_key)
+
+def ordenar_inteligentemente_arquivos(arquivos):
+    """Ordena arquivos do st.file_uploader ex: img_2 antes de img_10"""
+    convert = lambda text: int(text) if text.isdigit() else text.lower()
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key.name)]
+    return sorted(arquivos, key=alphanum_key)
+
 # --- MENU LATERAL ---
 st.sidebar.title("🛠️ Ferramentas PDF")
 opcao = st.sidebar.radio(
     "Escolha uma ação:",
-    ["1. Criar PDF de Imagens", "2. Inserir Página", "3. Substituir Página", "4. Extrair Imagens"]
+    ["1. Criar PDF(s) de Imagens", "2. Inserir Página", "3. Substituir Página", "4. Extrair Imagens"]
 )
 
 st.sidebar.markdown("---")
@@ -48,51 +65,136 @@ st.sidebar.info("App criado para processar PDFs e Imagens de forma fácil, mante
 # ==========================================
 # OPÇÃO 1: CRIAR PDF DE IMAGENS
 # ==========================================
-if opcao == "1. Criar PDF de Imagens":
+if opcao == "1. Criar PDF(s) de Imagens":
     st.title("📚 Criar PDF a partir de Imagens")
-    st.write("Selecione várias imagens (capítulos/páginas) para uni-las em um único PDF de alta qualidade.")
+    st.write("Junte imagens para formar PDFs. Escolha usar um arquivo ZIP (várias pastas) ou arquivos avulsos.")
 
+    # Configurações globais para esta opção
     largura_alvo = st.number_input("Largura Alvo (px)", value=LARGURA_PADRAO_DEFAULT)
-    
-    st.subheader("Imagens Principais")
-    imagens_upload = st.file_uploader("Selecione todas as imagens na ordem correta", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
     
     st.subheader("Opcionais (Padrões)")
     col1, col2 = st.columns(2)
     with col1:
-        img_inicio = st.file_uploader("Imagem Inicial (Capa/Aviso)", type=["png", "jpg", "jpeg", "webp"])
+        img_inicio = st.file_uploader("Imagem Inicial (Capa/Aviso)", type=["png", "jpg", "jpeg", "webp"], key="ini")
     with col2:
-        img_fim = st.file_uploader("Imagem Final (Fim/Créditos)", type=["png", "jpg", "jpeg", "webp"])
+        img_fim = st.file_uploader("Imagem Final (Fim/Créditos)", type=["png", "jpg", "jpeg", "webp"], key="fim")
 
-    if st.button("Gerar PDF") and imagens_upload:
-        try:
-            with st.spinner("Redimensionando e unindo imagens..."):
-                lista_imagens_pdf = []
-
-                if img_inicio:
-                    lista_imagens_pdf.append(carregar_imagem_padrao(img_inicio, largura_alvo))
-
-                for img_up in imagens_upload:
-                    lista_imagens_pdf.append(carregar_imagem_padrao(img_up, largura_alvo))
-
-                if img_fim:
-                    lista_imagens_pdf.append(carregar_imagem_padrao(img_fim, largura_alvo))
-
-                if lista_imagens_pdf:
-                    out_io = io.BytesIO()
-                    primeira_img = lista_imagens_pdf[0]
-                    outras_imgs = lista_imagens_pdf[1:]
-
-                    primeira_img.save(
-                        out_io, "PDF", resolution=100.0, save_all=True,
-                        append_images=outras_imgs, optimize=True
-                    )
-                    out_io.seek(0)
+    st.markdown("---")
+    st.markdown("### Escolha o método de envio:")
+    
+    # Criando abas para o usuário escolher o método
+    aba_zip, aba_avulsas = st.tabs(["📂 Modo ZIP (Lote de Pastas)", "🖼️ Modo Avulso (Várias Imagens)"])
+    
+    # --- ABA 1: MODO ZIP ---
+    with aba_zip:
+        st.info("Envie um arquivo .ZIP contendo pastas (ex: Pasta '1', Pasta '2'). Cada pasta vai virar um arquivo PDF.")
+        arquivo_zip = st.file_uploader("Envie o arquivo .ZIP com as pastas", type=["zip"])
+        
+        if st.button("Gerar PDFs em Lote") and arquivo_zip:
+            try:
+                with st.spinner("Extraindo imagens e gerando PDFs..."):
+                    pastas_dict = {}
                     
-                    st.success("✅ PDF criado com sucesso!")
-                    st.download_button("⬇️ Baixar Arquivo PDF", data=out_io, file_name="capitulo_unido.pdf", mime="application/pdf")
-        except Exception as e:
-            st.error(f"Erro ao gerar PDF: {e}")
+                    with zipfile.ZipFile(arquivo_zip, 'r') as z:
+                        for file_info in z.infolist():
+                            if file_info.is_dir() or "__MACOSX" in file_info.filename:
+                                continue
+                            
+                            parts = file_info.filename.split('/')
+                            if len(parts) >= 2:
+                                pasta_nome = parts[-2]
+                                arquivo_nome = parts[-1]
+                            else:
+                                pasta_nome = "Raiz"
+                                arquivo_nome = parts[0]
+                            
+                            _, ext = os.path.splitext(arquivo_nome.lower())
+                            if ext in EXTENSOES_IMAGEM:
+                                if pasta_nome not in pastas_dict:
+                                    pastas_dict[pasta_nome] = []
+                                pastas_dict[pasta_nome].append((arquivo_nome, z.read(file_info.filename)))
+                    
+                    if not pastas_dict:
+                        st.error("Nenhuma imagem suportada foi encontrada dentro deste ZIP.")
+                    else:
+                        zip_saida_io = io.BytesIO()
+                        
+                        with zipfile.ZipFile(zip_saida_io, 'w') as zip_saida:
+                            for pasta, lista_arquivos in pastas_dict.items():
+                                lista_ordenada = ordenar_inteligentemente_tuplas(lista_arquivos)
+                                lista_imagens_pdf = []
+                                
+                                if img_inicio:
+                                    lista_imagens_pdf.append(carregar_imagem_padrao(img_inicio, largura_alvo))
+                                
+                                for nome_arq, dados_img in lista_ordenada:
+                                    try:
+                                        img_bytes_io = io.BytesIO(dados_img)
+                                        img = Image.open(img_bytes_io)
+                                        if img.mode in ('RGBA', 'P', 'LA'):
+                                            img = img.convert('RGB')
+                                        lista_imagens_pdf.append(redimensionar_proporcional(img, largura_alvo))
+                                    except Exception as e:
+                                        st.warning(f"Erro na imagem {nome_arq}: {e}")
+                                
+                                if img_fim:
+                                    lista_imagens_pdf.append(carregar_imagem_padrao(img_fim, largura_alvo))
+                                
+                                if lista_imagens_pdf:
+                                    pdf_io = io.BytesIO()
+                                    primeira_img = lista_imagens_pdf[0]
+                                    outras_imgs = lista_imagens_pdf[1:]
+                                    
+                                    primeira_img.save(
+                                        pdf_io, "PDF", resolution=100.0, save_all=True,
+                                        append_images=outras_imgs, optimize=True
+                                    )
+                                    zip_saida.writestr(f"{pasta}.pdf", pdf_io.getvalue())
+                                    
+                        zip_saida_io.seek(0)
+                        st.success(f"✅ Lote finalizado! {len(pastas_dict)} PDFs gerados com sucesso.")
+                        st.download_button("⬇️ Baixar todos os PDFs (ZIP)", data=zip_saida_io, file_name="pdfs_prontos.zip", mime="application/zip")
+                        
+            except Exception as e:
+                st.error(f"Erro ao processar o lote: {e}")
+
+    # --- ABA 2: MODO AVULSO ---
+    with aba_avulsas:
+        st.info("Selecione várias imagens avulsas para gerar **um único PDF**.")
+        imagens_upload = st.file_uploader("Selecione todas as imagens", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
+        
+        if st.button("Gerar PDF Único") and imagens_upload:
+            try:
+                with st.spinner("Redimensionando e unindo imagens..."):
+                    lista_imagens_pdf = []
+
+                    if img_inicio:
+                        lista_imagens_pdf.append(carregar_imagem_padrao(img_inicio, largura_alvo))
+
+                    # Ordena as imagens enviadas inteligentemente (pág 2 vem antes da pág 10)
+                    imagens_ordenadas = ordenar_inteligentemente_arquivos(imagens_upload)
+
+                    for img_up in imagens_ordenadas:
+                        lista_imagens_pdf.append(carregar_imagem_padrao(img_up, largura_alvo))
+
+                    if img_fim:
+                        lista_imagens_pdf.append(carregar_imagem_padrao(img_fim, largura_alvo))
+
+                    if lista_imagens_pdf:
+                        out_io = io.BytesIO()
+                        primeira_img = lista_imagens_pdf[0]
+                        outras_imgs = lista_imagens_pdf[1:]
+
+                        primeira_img.save(
+                            out_io, "PDF", resolution=100.0, save_all=True,
+                            append_images=outras_imgs, optimize=True
+                        )
+                        out_io.seek(0)
+                        
+                        st.success("✅ PDF criado com sucesso!")
+                        st.download_button("⬇️ Baixar Arquivo PDF", data=out_io, file_name="capitulo_unido.pdf", mime="application/pdf")
+            except Exception as e:
+                st.error(f"Erro ao gerar PDF: {e}")
 
 
 # ==========================================
@@ -116,7 +218,6 @@ elif opcao == "2. Inserir Página":
             with st.spinner("Processando..."):
                 ext = os.path.splitext(item_novo.name)[1].lower()
                 
-                # Prepara a nova página
                 if ext in EXTENSOES_IMAGEM:
                     nova_pagina_io = image_to_pdf_bytes(item_novo, largura_alvo)
                 else:
@@ -132,7 +233,7 @@ elif opcao == "2. Inserir Página":
                     pagina_nova.scale_by(fator)
 
                 total_paginas = len(reader_principal.pages)
-                posicao_efetiva = min(posicao - 1, total_paginas) # Ajusta para índice 0
+                posicao_efetiva = min(posicao - 1, total_paginas)
 
                 for i in range(total_paginas):
                     if i == posicao_efetiva:
